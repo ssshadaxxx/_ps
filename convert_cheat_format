@@ -30,10 +30,10 @@ Param (
     $TargetPath    = "E:\GoogleDrive\nes\cheats"
 )
 
-#$GamePaths = Get-ChildItem $CheatRootPath
+$GamePaths = Get-ChildItem $CheatRootPath
 
 # Test with Punch-Out!
-$GamePaths = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"} | select -first 1
+# $GamePaths = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"} | select -first 1
 
 foreach ($Game in $GamePaths) {
     [xml]$xmlData = Get-Content -Path $Game.FullName
