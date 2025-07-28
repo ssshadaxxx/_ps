@@ -7,16 +7,25 @@
     Contact: RobertSuarezJr@gmail.com
 
     .SYNOPSIS
-    Converts XML Cheat Files used for NESTopia to other emulator formats (i.e. FCEUX, Nestopia, Mesen)
+    Converts XML Cheat Files used for Nestopia to other emulator formats (i.e. FCEUX, Nestopia, Mesen)
 
     .DESCRIPTION
     Takes the existing XMLs from the $CheatRootPath parameter and creates new files compatible with other emulators
 
     .EXAMPLE
-    Set CheatRootPath and TargetPath parameters, see default values
+    Set $CheatRootPath and $TargetPath parameters:
+
+        $CheatRootPath - Full path to folder containing XMLs cheats
+            Set this path to where the XML files exist
+            Example: D:\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack
+
+
+        $TargetPath    - Full target path for converted cheat files
+            Set this path to where you want the converted files stored.
+            Example: D:\nes\cheats
 
     .INPUTS
-    The NESTopia XML Cheat File Directory
+    The Nestopia XML Cheat File Directory
 
     .OUTPUTS
     The New Cheat Files for alternate emulators
@@ -26,26 +35,28 @@
 #>
 
 Param (
-    $CheatRootPath = "E:\GoogleDrive\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
-    $TargetPath    = "E:\GoogleDrive\nes\cheats"
+    $CheatRootPath = "D:\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
+    $TargetPath    = "D:\nes\cheats"
 )
 
-$GamePaths = Get-ChildItem $CheatRootPath
+# Gather Nestopia Cheat Files
+$NesCheatXMLs = Get-ChildItem $CheatRootPath
 
 # Test with Punch-Out!
-# $GamePaths = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"} | select -first 1
+# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"} | select -first 1
 
 # Initiate counter for progress indication
 $Counter = 0
 
-foreach ($Game in $GamePaths) {
+foreach ($Game in $NesCheatXMLs) {
     # Increment counter, display progress information
     $Counter++
-    "$($Game.Name) - $Counter \ $($GamePaths.Count)"
+    "$($Game.Name) - $Counter \ $($NesCheatXMLs.Count)"
 
     # Load XML Data
     [xml]$xmlData = Get-Content -Path $Game.FullName
     $CheatData = $xmlData.cheats.cheat
+    $GetDate = Get-Date -Format 'yyyy-MM-dd'
 
     #### Create FCEUX Format ####
     # Format:
@@ -59,8 +70,8 @@ foreach ($Game in $GamePaths) {
     # SCa290:f8:01:Skip intro
     # SC82b5:75:f5:Invincibility (2 of 2)
 
-    # Set FCEUX Directory, create if neded
-    $FCEUXPath       = $TargetPath + '\FCEUX' 
+    # Set FCEUX Directory, create if needed
+    $FCEUXPath       = $TargetPath + '\FCEUX' + ".Cheat.Code.Pack.$GetDate"
     New-Item -Path $FCEUXPath -ItemType Directory -ErrorAction SilentlyContinue
 
     # Set Game Cheat Path for FCEUX, file format = .cht
@@ -83,5 +94,5 @@ foreach ($Game in $GamePaths) {
     }
 
     # Export Converted Cheat file - UTF8 encoding
-    $ConvertedCheats | Out-File $FCEUXCheatFile -Encoding UTF8
+    $ConvertedCheats.TrimEnd() | Out-File $FCEUXCheatFile -Encoding UTF8
 }
