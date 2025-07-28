@@ -1,28 +1,28 @@
 <#
-  Convert NES Cheat Files
-  v0.1
-  July 27th, 2025
+    Convert NES Cheat Files
+    v0.1
+    July 27th, 2025
 
-  By:      Robert Suarez
-  Contact: RobertSuarezJr@gmail.com
+    By:      Robert Suarez
+    Contact: RobertSuarezJr@gmail.com
 
-  .SYNOPSIS
-   Converts XML Cheat Files used for NESTopia to other emulator formats (i.e. FCEUX, Nestopia, Mesen)
+    .SYNOPSIS
+    Converts XML Cheat Files used for NESTopia to other emulator formats (i.e. FCEUX, Nestopia, Mesen)
 
-  .DESCRIPTION
-   Takes the existing XMLs from the $CheatRootPath parameter and creates new files compatible with other emulators
+    .DESCRIPTION
+    Takes the existing XMLs from the $CheatRootPath parameter and creates new files compatible with other emulators
 
-  .EXAMPLE
-   Set CheatRootPath and TargetPath parameters, see default values
+    .EXAMPLE
+    Set CheatRootPath and TargetPath parameters, see default values
 
-  .INPUTS
-   The NESTopia XML Cheat File Directory
+    .INPUTS
+    The NESTopia XML Cheat File Directory
 
-  .OUTPUTS
-   The New Cheat Files for alternate emulators
+    .OUTPUTS
+    The New Cheat Files for alternate emulators
 
-  .NOTES
-   Must be in UTF8 format (for FCEUX, presumably all)
+    .NOTES
+    Must be in UTF8 format (for FCEUX, presumably all)
 #>
 
 Param (
@@ -35,7 +35,15 @@ $GamePaths = Get-ChildItem $CheatRootPath
 # Test with Punch-Out!
 # $GamePaths = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"} | select -first 1
 
+# Initiate counter for progress indication
+$Counter = 0
+
 foreach ($Game in $GamePaths) {
+    # Increment counter, display progress information
+    $Counter++
+    "$($Game.Name) - $Counter \ $($GamePaths.Count)"
+
+    # Load XML Data
     [xml]$xmlData = Get-Content -Path $Game.FullName
     $CheatData = $xmlData.cheats.cheat
 
@@ -50,9 +58,6 @@ foreach ($Game in $GamePaths) {
     # SC8080:00:e5:Invincibility (1 of 2)
     # SCa290:f8:01:Skip intro
     # SC82b5:75:f5:Invincibility (2 of 2)
-    #
-    # Notes:
-
 
     # Set FCEUX Directory, create if neded
     $FCEUXPath       = $TargetPath + '\FCEUX' 
@@ -74,6 +79,7 @@ foreach ($Game in $GamePaths) {
             # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
             $ConvertedCheats += "S" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
         }
+        "Added: $($ConvertedCheats | Select -Last 1)"
     }
 
     # Export Converted Cheat file - UTF8 encoding
