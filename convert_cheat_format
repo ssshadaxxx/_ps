@@ -1,0 +1,81 @@
+<#
+  Convert NES Cheat Files
+  v0.1
+  July 27th, 2025
+
+  By:      Robert Suarez
+  Contact: RobertSuarezJr@gmail.com
+
+  .SYNOPSIS
+   Converts XML Cheat Files used for NESTopia to other emulator formats (i.e. FCEUX, Nestopia, Mesen)
+
+  .DESCRIPTION
+   Takes the existing XMLs from the $CheatRootPath parameter and creates new files compatible with other emulators
+
+  .EXAMPLE
+   Set CheatRootPath and TargetPath parameters, see default values
+
+  .INPUTS
+   The NESTopia XML Cheat File Directory
+
+  .OUTPUTS
+   The New Cheat Files for alternate emulators
+
+  .NOTES
+   Must be in UTF8 format (for FCEUX, presumably all)
+#>
+
+Param (
+    $CheatRootPath = "E:\GoogleDrive\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
+    $TargetPath    = "E:\GoogleDrive\nes\cheats"
+)
+
+#$GamePaths = Get-ChildItem $CheatRootPath
+
+# Test with Punch-Out!
+$GamePaths = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"} | select -first 1
+
+foreach ($Game in $GamePaths) {
+    [xml]$xmlData = Get-Content -Path $Game.FullName
+    $CheatData = $xmlData.cheats.cheat
+
+    #### Create FCEUX Format ####
+    # Format:
+    # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
+    #
+
+    #
+    # Examples:
+    # S0001:01:Start on match 02 - Von Keiser
+    # SC8080:00:e5:Invincibility (1 of 2)
+    # SCa290:f8:01:Skip intro
+    # SC82b5:75:f5:Invincibility (2 of 2)
+    #
+    # Notes:
+
+
+    # Set FCEUX Directory, create if neded
+    $FCEUXPath       = $TargetPath + '\FCEUX' 
+    New-Item -Path $FCEUXPath -ItemType Directory -ErrorAction SilentlyContinue
+
+    # Set Game Cheat Path for FCEUX, file format = .cht
+    $FCEUXCheatFile = $FCEUXPath + "\$($Game.Name.Replace('.xml','.cht'))"
+
+    # Initiate Blank Converted Cheat File
+    $ConvertedCheats = ''
+
+    # Build New Converted Cheat File
+    foreach ($Cheat in $CheatData) {
+        if ($Cheat.genie -and $Cheat.compare) {
+            # If value for 'genie', need value for 'compare'
+            # SC + <ADDRESS> + <VALUE> + : + <COMPARE> + : + <DESCRIPTION>
+            $ConvertedCheats += "SC" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.compare.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
+        } else {
+            # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
+            $ConvertedCheats += "S" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
+        }
+    }
+
+    # Export Converted Cheat file - UTF8 encoding
+    $ConvertedCheats | Out-File $FCEUXCheatFile -Encoding UTF8
+}
