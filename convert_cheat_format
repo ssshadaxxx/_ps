@@ -1,7 +1,7 @@
 <#
     Convert NES Cheat Files
-    v0.1
-    July 27th, 2025
+    v1.0
+    July 28th, 2025
 
     By:      Robert Suarez
     Contact: RobertSuarezJr@gmail.com
@@ -17,12 +17,12 @@
 
         $CheatRootPath - Full path to folder containing XMLs cheats
             Set this path to where the XML files exist
-            Example: D:\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack
+            Example: C:\users\shadax\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack
 
 
         $TargetPath    - Full target path for converted cheat files
             Set this path to where you want the converted files stored.
-            Example: D:\nes\cheats
+            Example: C:\users\shadax\nes\cheats
 
     .INPUTS
     The Nestopia XML Cheat File Directory
@@ -35,15 +35,81 @@
 #>
 
 Param (
-    $CheatRootPath = "D:\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
-    $TargetPath    = "D:\nes\cheats"
+    $CheatRootPath = "C:\users\shadax\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
+    $TargetPath    = "C:\users\shadax\nes\cheats"
 )
+
+function Decode-GameGenieCode {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Code
+    )
+
+    # Game Genie character map (uppercase-only)
+    $charMap = @{
+        "A" = 0x0; "P" = 0x1; "Z" = 0x2; "L" = 0x3; "G" = 0x4; "I" = 0x5; "T" = 0x6; "Y" = 0x7;
+        "E" = 0x8; "O" = 0x9; "X" = 0xA; "U" = 0xB; "K" = 0xC; "S" = 0xD; "V" = 0xE; "N" = 0xF
+    }
+
+    if ($Code.Length -ne 6 -and $Code.Length -ne 8) {
+        throw "Invalid Game Genie code length. Only 6 or 8 character codes are supported."
+    }
+
+    $n = @()
+    foreach ($char in $Code.ToCharArray()) {
+        $charUpper = $char.ToString().ToUpperInvariant()
+        if (-not $charMap.ContainsKey($charUpper)) {
+            throw "Invalid character '$char' in code."
+        }
+        $n += $charMap[$charUpper]
+    }
+
+    # Decode address
+    $address = 0x8000 +
+        (($n[3] -band 0x7) -shl 12) -bor
+        (($n[5] -band 0x7) -shl 8)  -bor (($n[4] -band 0x8) -shl 8) -bor
+        (($n[2] -band 0x7) -shl 4)  -bor (($n[1] -band 0x8) -shl 4) -bor
+        ($n[4] -band 0x7)           -bor ($n[3] -band 0x8)
+
+    $data = 0
+    $compare = $null
+
+    if ($Code.Length -eq 6) {
+        $data =
+            (($n[1] -band 0x7) -shl 4) -bor (($n[0] -band 0x8) -shl 4) -bor
+            ($n[0] -band 0x7) -bor ($n[5] -band 0x8)
+    }
+    else {
+        # 8-character code
+        $data =
+            (($n[1] -band 0x7) -shl 4) -bor (($n[0] -band 0x8) -shl 4) -bor
+            ($n[0] -band 0x7) -bor ($n[7] -band 0x8)
+
+        $compare =
+            (($n[7] -band 0x7) -shl 4) -bor (($n[6] -band 0x8) -shl 4) -bor
+            ($n[6] -band 0x7) -bor ($n[5] -band 0x8)
+    }
+
+    # Return object
+    [PSCustomObject]@{
+        genie   = $Code.ToUpperInvariant()
+        address = ('0x{0:X4}' -f $address)
+        value   = ('0x{0:X2}' -f $data)
+        compare = if ($compare -ne $null) { '0x{0:X2}' -f $compare } else { $null }
+    }
+}
 
 # Gather Nestopia Cheat Files
 $NesCheatXMLs = Get-ChildItem $CheatRootPath
 
-# Test with Punch-Out!
-# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"} | select -first 1
+### Test games ###
+#
+# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"}
+# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "1942 (Japan, USA) (En).xml"}
+# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Super Mario Bros. 2 (USA) (Rev 1).xml"}
+# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Yume Koujou Doki Doki Panic (Japan) [b].xml"}
+# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Laser Invasion (USA).xml"}
+### Test games ###
 
 # Initiate counter for progress indication
 $Counter = 0
@@ -54,7 +120,7 @@ foreach ($Game in $NesCheatXMLs) {
     "$($Game.Name) - $Counter \ $($NesCheatXMLs.Count)"
 
     # Load XML Data
-    [xml]$xmlData = Get-Content -Path $Game.FullName
+    [xml]$xmlData = Get-Content -LiteralPath $Game.FullName
     $CheatData = $xmlData.cheats.cheat
     $GetDate = Get-Date -Format 'yyyy-MM-dd'
 
@@ -71,7 +137,7 @@ foreach ($Game in $NesCheatXMLs) {
     # SC82b5:75:f5:Invincibility (2 of 2)
 
     # Set FCEUX Directory, create if needed
-    $FCEUXPath       = $TargetPath + '\FCEUX' + ".Cheat.Code.Pack.$GetDate"
+    $FCEUXPath = $TargetPath + '\FCEUX' + ".Cheat.Code.Pack.$GetDate"
     New-Item -Path $FCEUXPath -ItemType Directory -ErrorAction SilentlyContinue
 
     # Set Game Cheat Path for FCEUX, file format = .cht
@@ -80,19 +146,44 @@ foreach ($Game in $NesCheatXMLs) {
     # Initiate Blank Converted Cheat File (adds blank to deal with an issue where the first cheat occasionally does not work for some reason, example 1942 - Infinite Lives)
     $ConvertedCheats = "`n"
 
+    # Testing genie only value for Super Mario Bros. 2 (USA) (Rev 1): GEEPUZAG
+    # $cheatdata = $cheatdata | ?{$_.description -eq 'Start on World 5 (3 of 3)'}
+
     # Build New Converted Cheat File
     foreach ($Cheat in $CheatData) {
-        if ($Cheat.genie -and $Cheat.compare) {
-            # If value for 'genie', need value for 'compare'
+        #$Cheat | Format-Table -AutoSize -Wrap
+
+        # If missing address or value, check for genie code
+        if ((!$Cheat.address -or !$Cheat.value) -and $Cheat.genie) {
+            
+            # Store Cheat Data before rewrite
+            $cheatBackup = $Cheat
+
+            # Decode the genie code
+            $decode = Decode-GameGenieCode -Code $Cheat.genie
+
+            # Rewrite values
+            $Cheat = [PSCustomObject]@{
+                genie       = $decode.genie
+                address     = $decode.address
+                value       = $decode.value
+                compare     = $decode.compare
+                description = $cheatBackup.description
+            }
+        }
+        
+        # If compare data present, set with compare "SC", otherwise set with no compare "S"
+        If ($Cheat.compare) {
+            # Applies only when memory matches compare
             # SC + <ADDRESS> + <VALUE> + : + <COMPARE> + : + <DESCRIPTION>
             $ConvertedCheats += "SC" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.compare.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
-        } else {
+        }  else {
+            # Always applies
             # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
             $ConvertedCheats += "S" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
         }
-        "Added: $($ConvertedCheats | Select -Last 1)"
     }
 
     # Export Converted Cheat file - UTF8 encoding
-    $ConvertedCheats.TrimEnd() | Out-File $FCEUXCheatFile -Encoding UTF8
+    $ConvertedCheats.TrimEnd() | Out-File -LiteralPath $FCEUXCheatFile -Encoding UTF8
 }
