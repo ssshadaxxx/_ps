@@ -77,8 +77,8 @@ foreach ($Game in $NesCheatXMLs) {
     # Set Game Cheat Path for FCEUX, file format = .cht
     $FCEUXCheatFile = $FCEUXPath + "\$($Game.Name.Replace('.xml','.cht'))"
 
-    # Initiate Blank Converted Cheat File
-    $ConvertedCheats = ''
+    # Initiate Blank Converted Cheat File (adds blank to deal with an issue where the first cheat occasionally does not work for some reason, example 1942 - Infinite Lives)
+    $ConvertedCheats = "`n"
 
     # Build New Converted Cheat File
     foreach ($Cheat in $CheatData) {
