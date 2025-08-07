@@ -1,7 +1,7 @@
 <#
     Convert NES Cheat Files
     v0.9
-    August 7th, 2025
+    August th, 2025
 
     By:      Robert Suarez
     Contact: RobertSuarezJr@gmail.com
@@ -33,11 +33,6 @@
     .NOTES
     Must be in UTF-8 fomrat, or possibly ANSI (for FCEUX, presumably all Emualtors)
 #>
-
-Param (
-    $CheatRootPath = "E:\GoogleDrive\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
-    $TargetPath    = "E:\GoogleDrive\nes\cheats"
-)
 
 function Encode-GameGenieCode {
     param(
@@ -187,11 +182,12 @@ function ConvertTo-XML {
 
 function ConvertTo-CHT {
     param (
-        $CheatRootPath
+        $CheatRootPath,
+        $TargetExportPath
     )
 
     # Gather Nestopia Cheat Files
-    $NesCheatXMLs  = Get-ChildItem $CheatRootPath
+    $NesCheatXML = Get-Item -LiteralPath $CheatRootPath
 
     ### Test games ###
     #
@@ -208,13 +204,13 @@ function ConvertTo-CHT {
     # Create GameGenie Code, need to work this out
     # Encode-GameGenieCode -Address $($ObjTable | select -last 1).Address -Value $($ObjTable | select -last 1).Value -Compare $($ObjTable | select -last 1).Compare
 
-    foreach ($Game in $NesCheatXMLs) {
+    #foreach ($NesCheatXML in $NesCheatXMLs) {
         # Increment counter, display progress information
-        $Counter++
-        "$($Game.Name) - $Counter \ $($NesCheatXMLs.Count)"
+        #$Counter++
+        #"$($NesCheatXML.Name) - $Counter \ $($NesCheatXMLs.Count)"
 
         # Load XML Data
-        [xml]$xmlData = Get-Content -LiteralPath $Game.FullName
+        [xml]$xmlData = Get-Content -LiteralPath $NesCheatXML.FullName
         $CheatData = $xmlData.cheats.cheat
         $GetDate = Get-Date -Format 'yyyy-MM-dd'
 
@@ -235,7 +231,7 @@ function ConvertTo-CHT {
         New-Item -Path $FCEUXPath -ItemType Directory -ErrorAction SilentlyContinue
 
         # Set Game Cheat Path for FCEUX, file format = .cht
-        $FCEUXCheatFile = $FCEUXPath + "\$($Game.Name.Replace('.xml','.cht'))"
+        #$FCEUXCheatFile = $FCEUXPath + "\$($NesCheatXML.Name.Replace('.xml','.cht'))"
 
         # Initiate Blank Converted Cheat File (adds blank to deal with an issue where the first cheat occasionally does not work for some reason, example 1942 - Infinite Lives)
         $ConvertedCheats = "`n"
@@ -279,8 +275,8 @@ function ConvertTo-CHT {
         }
 
         # Export Converted Cheat file - UTF8 encoding
-        $ConvertedCheats.TrimEnd() | Out-File -LiteralPath $FCEUXCheatFile -Encoding UTF8
-    }
+        $ConvertedCheats.TrimEnd() | Out-File -LiteralPath $TargetExportPath -Encoding UTF8
+    #} End of deprecated for-each koop - need to clean this up
 }
 
 ### Start GUI ###
@@ -289,7 +285,7 @@ Add-Type -AssemblyName System.Drawing
 
 # Create Form
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "CHT ⇄ XML Converter"
+$form.Text = "XML to CHT Converter"
 $form.Size = New-Object System.Drawing.Size(450, 430)
 $form.StartPosition = "CenterScreen"
 
@@ -490,8 +486,19 @@ $convertButton.Add_Click({
 
     try {
         if ($radioFile.Checked) {
-            $outputDialog = New-Object System.Windows.Forms.SaveFileDialog
-            if ($outputDialog.ShowDialog() -ne "OK") { return }
+
+            $fullName   = $inputPath
+            $baseName   = [System.IO.Path]::GetFileNameWithoutExtension($inputPath)
+            $CurrentPath = Get-Item $inputPath | select -ExpandProperty Directory | select -ExpandProperty Fullname
+            $outputFolder = Join-Path $CurrentPath "Converted - $(Get-Date -Format yyyyMMdd-hhmmss)"
+            $outputFile = Join-Path $outputFolder "$baseName.$(if ($extension -eq '.cht') {'xml'} else {'cht'})"
+
+            if (-Not (Test-Path $outputFolder)) {
+                New-Item -ItemType Directory -Path $outputFolder | Out-Null
+            }
+
+            #$outputDialog = New-Object System.Windows.Forms.SaveFileDialog
+            #if ($outputDialog.ShowDialog() -ne "OK") { return }
 
             $extension = [System.IO.Path]::GetExtension($inputPath).ToLower()
             if ($extension -eq ".cht") {
@@ -500,8 +507,9 @@ $convertButton.Add_Click({
                 $xmlData | Out-File -FilePath $outputDialog.FileName -Encoding UTF8
                 $statusLabel.Text = "Converted CHT to XML successfully."
             } elseif ($extension -eq ".xml") {
-                $xmlData = Get-Content -Raw -Path $inputPath | ConvertFrom-XML
-                $xmlData | Export-Csv -Path $outputDialog.FileName -NoTypeInformation -Encoding UTF8
+                #$xmlData = Get-Content -Raw -Path $inputPath | ConvertTo-CHT
+                #$xmlData | Export-Csv -Path $outputDialog.FileName -NoTypeInformation -Encoding UTF8
+                ConvertTo-CHT -CheatRootPath $fullName -TargetExportPath $outputFile
                 $statusLabel.Text = "Converted XML to CHT successfully."
             } else {
                 $statusLabel.Text = "Unsupported file format."
@@ -525,12 +533,13 @@ $convertButton.Add_Click({
                 return
             }
 
-            $outputFolder = Join-Path $inputPath "Converted"
+            $outputFolder = Join-Path $inputPath "Converted - $(Get-Date -Format yyyyMMdd-hhmmss)"
             if (-Not (Test-Path $outputFolder)) {
                 New-Item -ItemType Directory -Path $outputFolder | Out-Null
             }
 
             foreach ($file in $files) {
+                $fullName = $file.FullName
                 $baseName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
                 $extension = $file.Extension.ToLower()
                 $outputFile = Join-Path $outputFolder "$baseName.$(if ($extension -eq '.cht') {'xml'} else {'cht'})"
@@ -540,15 +549,17 @@ $convertButton.Add_Click({
                     $xmlData = $chtData | ConvertTo-XML -Depth 5
                     $xmlData | Out-File -FilePath $outputFile -Encoding UTF8
                 } elseif ($extension -eq ".xml") {
-                    $xmlData = Get-Content -Raw -Path $file.FullName | ConvertFrom-XML
-                    $xmlData | Export-Csv -Path $outputFile -NoTypeInformation -Encoding UTF8
+                    #$xmlData = Get-Content -Raw -Path $file.FullName | ConvertTo-CHT
+                    #$xmlData | Export-Csv -Path $outputFile -NoTypeInformation -Encoding UTF8
+                    ConvertTo-CHT -CheatRootPath $fullName -TargetExportPath $outputFile
+                    $statusLabel.Text = "Converted XML to CHT successfully."
                 }
             }
 
             $statusLabel.Text = "Converted $total file(s) to: $outputFolder"
         }
     } catch {
-        $statusLabel.Text = "Conversion failed: $($_.Exception.Message)"
+        $statusLabel.Text = "$baseName - Conversion failed: $($_.Exception.Message)"
     }
 })
 
