@@ -1,7 +1,7 @@
 <#
     Convert NES Cheat Files
-    v1.0
-    July 28th, 2025
+    v0.9
+    August 7th, 2025
 
     By:      Robert Suarez
     Contact: RobertSuarezJr@gmail.com
@@ -17,12 +17,12 @@
 
         $CheatRootPath - Full path to folder containing XMLs cheats
             Set this path to where the XML files exist
-            Example: C:\users\shadax\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack
+            Example: E:\GoogleDrive\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack
 
 
         $TargetPath    - Full target path for converted cheat files
             Set this path to where you want the converted files stored.
-            Example: C:\users\shadax\nes\cheats
+            Example: E:\GoogleDrive\nes\cheats
 
     .INPUTS
     The Nestopia XML Cheat File Directory
@@ -31,13 +31,67 @@
     The New Cheat Files for alternate emulators
 
     .NOTES
-    Must be in UTF8 format (for FCEUX, presumably all)
+    Must be in UTF-8 fomrat, or possibly ANSI (for FCEUX, presumably all Emualtors)
 #>
 
 Param (
-    $CheatRootPath = "C:\users\shadax\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
-    $TargetPath    = "C:\users\shadax\nes\cheats"
+    $CheatRootPath = "E:\GoogleDrive\nes\cheats\Nestopia.Cheat.Code.Pack.2024-05-08\Nestopia Cheat Code Pack",
+    $TargetPath    = "E:\GoogleDrive\nes\cheats"
 )
+
+function Encode-GameGenieCode {
+    param(
+        [Parameter(Mandatory)][int]$Address,
+        [Parameter(Mandatory)][byte]$Value,
+        [byte]$Compare
+    )
+
+    # Reverse character map
+    $reverseMap = @{
+        0x0 = "A"; 0x1 = "P"; 0x2 = "Z"; 0x3 = "L"
+        0x4 = "G"; 0x5 = "I"; 0x6 = "T"; 0x7 = "Y"
+        0x8 = "E"; 0x9 = "O"; 0xA = "X"; 0xB = "U"
+        0xC = "K"; 0xD = "S"; 0xE = "V"; 0xF = "N"
+    }
+
+    $addr = $Address - 0x8000
+
+    $n = @(0..7 | ForEach-Object { 0 })
+
+    # Map address bits to Game Genie code
+    $n[3] = (($addr -shr 12) -band 0x7)
+    $n[5] = (($addr -shr 8) -band 0x7)
+    $n[4] = (($addr -shr 8) -band 0x8)
+    $n[2] = (($addr -shr 4) -band 0x7)
+    $n[1] = (($addr -shr 4) -band 0x8)
+    $n[4] = $n[4] -bor (($addr) -band 0x7)
+    $n[3] = $n[3] -bor (($addr) -band 0x8)
+
+    if ($null -eq $Compare) {
+        # 6-character code
+        $n[1] = $n[1] -bor (($Value -shr 4) -band 0x7)
+        $n[0] = (($Value -shr 4) -band 0x8)
+        $n[0] = $n[0] -bor ($Value -band 0x7)
+        $n[5] = $n[5] -bor ($Value -band 0x8)
+
+        $code = ($n[0..5] | ForEach-Object { $reverseMap[$_] }) -join ''
+    }
+    else {
+        # 8-character code
+        $n[1] = $n[1] -bor (($Value -shr 4) -band 0x7)
+        $n[0] = (($Value -shr 4) -band 0x8)
+        $n[0] = $n[0] -bor ($Value -band 0x7)
+        $n[7] = ($Value -band 0x8)
+
+        $n[6] = (($Compare -shr 4) -band 0x7)
+        $n[7] = $n[7] -bor (($Compare -shr 4) -band 0x8)
+        $n[6] = $n[6] -bor ($Compare -band 0x7)
+
+        $code = ($n[0..7] | ForEach-Object { $reverseMap[$_] }) -join ''
+    }
+
+    return $code
+}
 
 function Decode-GameGenieCode {
     param(
@@ -99,91 +153,405 @@ function Decode-GameGenieCode {
     }
 }
 
-# Gather Nestopia Cheat Files
-$NesCheatXMLs = Get-ChildItem $CheatRootPath
+function ConvertTo-XML {
+    param (
+        $Path
+    )
+    $CHTData  = Get-Content $Path
+    $ObjTable = @()
 
-### Test games ###
-#
-# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"}
-# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "1942 (Japan, USA) (En).xml"}
-# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Super Mario Bros. 2 (USA) (Rev 1).xml"}
-# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Yume Koujou Doki Doki Panic (Japan) [b].xml"}
-# $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Laser Invasion (USA).xml"}
-### Test games ###
+    foreach ($Line in $CHTData) {
+        $CHTItems = $Line.Split(':')
 
-# Initiate counter for progress indication
-$Counter = 0
+        if ($CHTItems[0] -like 'sc*') {
+            $Compare = [byte]("0x$($CHTItems[2])")
+            $Address = [int]("0x$($CHTItems[0].Replace('SC',''))")
+            $Value   = [byte]("0x$($CHTItems[1])")
+        } else {
+            $Compare = $null
+            $Address = [int]("0x$($CHTItems[0].Replace('S',''))")
+            $Value   = [byte]("0x$($CHTItems[1])")
+        }
 
-foreach ($Game in $NesCheatXMLs) {
-    # Increment counter, display progress information
-    $Counter++
-    "$($Game.Name) - $Counter \ $($NesCheatXMLs.Count)"
-
-    # Load XML Data
-    [xml]$xmlData = Get-Content -LiteralPath $Game.FullName
-    $CheatData = $xmlData.cheats.cheat
-    $GetDate = Get-Date -Format 'yyyy-MM-dd'
-
-    #### Create FCEUX Format ####
-    # Format:
-    # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
-    #
-
-    #
-    # Examples:
-    # S0001:01:Start on match 02 - Von Keiser
-    # SC8080:00:e5:Invincibility (1 of 2)
-    # SCa290:f8:01:Skip intro
-    # SC82b5:75:f5:Invincibility (2 of 2)
-
-    # Set FCEUX Directory, create if needed
-    $FCEUXPath = $TargetPath + '\FCEUX' + ".Cheat.Code.Pack.$GetDate"
-    New-Item -Path $FCEUXPath -ItemType Directory -ErrorAction SilentlyContinue
-
-    # Set Game Cheat Path for FCEUX, file format = .cht
-    $FCEUXCheatFile = $FCEUXPath + "\$($Game.Name.Replace('.xml','.cht'))"
-
-    # Initiate Blank Converted Cheat File (adds blank to deal with an issue where the first cheat occasionally does not work for some reason, example 1942 - Infinite Lives)
-    $ConvertedCheats = "`n"
-
-    # Testing genie only value for Super Mario Bros. 2 (USA) (Rev 1): GEEPUZAG
-    # $cheatdata = $cheatdata | ?{$_.description -eq 'Start on World 5 (3 of 3)'}
-
-    # Build New Converted Cheat File
-    foreach ($Cheat in $CheatData) {
-        #$Cheat | Format-Table -AutoSize -Wrap
-
-        # If missing address or value, check for genie code
-        if ((!$Cheat.address -or !$Cheat.value) -and $Cheat.genie) {
-            
-            # Store Cheat Data before rewrite
-            $cheatBackup = $Cheat
-
-            # Decode the genie code
-            $decode = Decode-GameGenieCode -Code $Cheat.genie
-
-            # Rewrite values
-            $Cheat = [PSCustomObject]@{
-                genie       = $decode.genie
-                address     = $decode.address
-                value       = $decode.value
-                compare     = $decode.compare
-                description = $cheatBackup.description
+        if ($Value -ne $null) {
+            $ObjTable += [PSCustomObject]@{
+                Compare     = $Compare
+                Address     = $Address
+                Value       = $Value
+                Description = $CHTItems[-1]
             }
         }
-        
-        # If compare data present, set with compare "SC", otherwise set with no compare "S"
-        If ($Cheat.compare) {
-            # Applies only when memory matches compare
-            # SC + <ADDRESS> + <VALUE> + : + <COMPARE> + : + <DESCRIPTION>
-            $ConvertedCheats += "SC" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.compare.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
-        }  else {
-            # Always applies
-            # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
-            $ConvertedCheats += "S" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
+    }
+    return $ObjTable
+}
+
+function ConvertTo-CHT {
+    param (
+        $CheatRootPath
+    )
+
+    # Gather Nestopia Cheat Files
+    $NesCheatXMLs  = Get-ChildItem $CheatRootPath
+
+    ### Test games ###
+    #
+    # $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1).xml"}
+    # $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "1942 (Japan, USA) (En).xml"}
+    # $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Super Mario Bros. 2 (USA) (Rev 1).xml"}
+    # $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Yume Koujou Doki Doki Panic (Japan) [b].xml"}
+    # $NesCheatXMLs = Get-ChildItem $CheatRootPath | ?{$_.name -eq "Laser Invasion (USA).xml"}
+    ### Test games ###
+
+    # Initiate counter for progress indication
+    $Counter = 0
+
+    # Create GameGenie Code, need to work this out
+    # Encode-GameGenieCode -Address $($ObjTable | select -last 1).Address -Value $($ObjTable | select -last 1).Value -Compare $($ObjTable | select -last 1).Compare
+
+    foreach ($Game in $NesCheatXMLs) {
+        # Increment counter, display progress information
+        $Counter++
+        "$($Game.Name) - $Counter \ $($NesCheatXMLs.Count)"
+
+        # Load XML Data
+        [xml]$xmlData = Get-Content -LiteralPath $Game.FullName
+        $CheatData = $xmlData.cheats.cheat
+        $GetDate = Get-Date -Format 'yyyy-MM-dd'
+
+        #### Create FCEUX Format ####
+        # Format:
+        # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
+        #
+
+        #
+        # Examples:
+        # S0001:01:Start on match 02 - Von Keiser
+        # SC8080:00:e5:Invincibility (1 of 2)
+        # SCa290:f8:01:Skip intro
+        # SC82b5:75:f5:Invincibility (2 of 2)
+
+        # Set FCEUX Directory, create if needed
+        $FCEUXPath = $TargetPath + '\FCEUX' + ".Cheat.Code.Pack.$GetDate"
+        New-Item -Path $FCEUXPath -ItemType Directory -ErrorAction SilentlyContinue
+
+        # Set Game Cheat Path for FCEUX, file format = .cht
+        $FCEUXCheatFile = $FCEUXPath + "\$($Game.Name.Replace('.xml','.cht'))"
+
+        # Initiate Blank Converted Cheat File (adds blank to deal with an issue where the first cheat occasionally does not work for some reason, example 1942 - Infinite Lives)
+        $ConvertedCheats = "`n"
+
+        # Testing genie only value for Super Mario Bros. 2 (USA) (Rev 1): GEEPUZAG
+        # $cheatdata = $cheatdata | ?{$_.description -eq 'Start on World 5 (3 of 3)'}
+
+        # Build New Converted Cheat File
+        foreach ($Cheat in $CheatData) {
+            #$Cheat | Format-Table -AutoSize -Wrap
+
+            # If missing address or value, check for genie code
+            if ((!$Cheat.address -or !$Cheat.value) -and $Cheat.genie) {
+                
+                # Store Cheat Data before rewrite
+                $cheatBackup = $Cheat
+
+                # Decode the genie code
+                $decode = Decode-GameGenieCode -Code $Cheat.genie
+
+                # Rewrite values
+                $Cheat = [PSCustomObject]@{
+                    genie       = $decode.genie
+                    address     = $decode.address
+                    value       = $decode.value
+                    compare     = $decode.compare
+                    description = $cheatBackup.description
+                }
+            }
+            
+            # If compare data present, set with compare "SC", otherwise set with no compare "S"
+            If ($Cheat.compare) {
+                # Applies only when memory matches compare
+                # SC + <ADDRESS> + <VALUE> + : + <COMPARE> + : + <DESCRIPTION>
+                $ConvertedCheats += "SC" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.compare.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
+            }  else {
+                # Always applies
+                # S + <ADDRESS> + : + <VALUE> + : + <DESCRIPTION>
+                $ConvertedCheats += "S" + $Cheat.address.ToLower().Replace('0x','') + ':' + $Cheat.value.ToLower().Replace('0x','') + ':' + $Cheat.description + "`n"
+            }
+        }
+
+        # Export Converted Cheat file - UTF8 encoding
+        $ConvertedCheats.TrimEnd() | Out-File -LiteralPath $FCEUXCheatFile -Encoding UTF8
+    }
+}
+
+### Start GUI ###
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# Create Form
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "CHT ⇄ XML Converter"
+$form.Size = New-Object System.Drawing.Size(450, 430)
+$form.StartPosition = "CenterScreen"
+
+# INPUT AREA
+
+# Label: File or folder path
+$label = New-Object System.Windows.Forms.Label
+$label.Text = "Select file or folder to convert:"
+$label.Location = New-Object System.Drawing.Point(10, 10)
+$label.Size = New-Object System.Drawing.Size(400, 20)
+$form.Controls.Add($label)
+
+# TextBox: File or folder path
+$textBoxPath = New-Object System.Windows.Forms.TextBox
+$textBoxPath.Location = New-Object System.Drawing.Point(10, 35)
+$textBoxPath.Size = New-Object System.Drawing.Size(300, 20)
+$form.Controls.Add($textBoxPath)
+
+# Browse Button
+$browseButton = New-Object System.Windows.Forms.Button
+$browseButton.Text = "Browse"
+$browseButton.Location = New-Object System.Drawing.Point(320, 33)
+$browseButton.Size = New-Object System.Drawing.Size(100, 23)
+$form.Controls.Add($browseButton)
+
+# Label: Mode
+$modeLabel = New-Object System.Windows.Forms.Label
+$modeLabel.Location = New-Object System.Drawing.Point(10, 65)
+$modeLabel.Size = New-Object System.Drawing.Size(40, 20)
+$form.Controls.Add($modeLabel)
+
+# Radio Button: Folder (default)
+$radioFolder = New-Object System.Windows.Forms.RadioButton
+$radioFolder.Text = "Folder"
+$radioFolder.Location = New-Object System.Drawing.Point(60, 65)
+$radioFolder.Size = New-Object System.Drawing.Size(70, 20)
+$radioFolder.Checked = $true
+$form.Controls.Add($radioFolder)
+
+# Radio Button: File
+$radioFile = New-Object System.Windows.Forms.RadioButton
+$radioFile.Text = "File"
+$radioFile.Location = New-Object System.Drawing.Point(140, 65)
+$radioFile.Size = New-Object System.Drawing.Size(50, 20)
+$form.Controls.Add($radioFile)
+
+# ACTION AREA
+
+# Convert Button
+$convertButton = New-Object System.Windows.Forms.Button
+$convertButton.Text = "Convert"
+$convertButton.Location = New-Object System.Drawing.Point(10, 100)
+$convertButton.Size = New-Object System.Drawing.Size(100, 30)
+$convertButton.Enabled = $false
+$form.Controls.Add($convertButton)
+
+# Help Button
+$btnHelp = New-Object System.Windows.Forms.Button
+$btnHelp.Text = "Info"
+$btnHelp.Location = New-Object System.Drawing.Point(145, 100)
+$btnHelp.Size = New-Object System.Drawing.Size(60, 30)
+$btnHelp.Add_Click({
+    [System.Windows.Forms.MessageBox]::Show(
+
+        "v0.9`n" +
+        "By: Robert Suarez`n" +
+        "robertsuarezjr@gmail.com`n`n" +
+        "Converts .xml and .cht cheat files used for NES emulators (RetroArch, Nestopia, Mesen, FCEUX)`n`n" +
+        "Select a file or folder containing supported files:`n" +
+        "  .cht for RetroArch, FCEUX, Mesen (converts to .xml)`n" +
+        "  .xml for Nestopia, Mesen (converts to .cht)`n`n" +
+        "Output:`n" +
+        "New folder containing converted files",
+        "NES Emulator Cheat File Converter",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information
+    )
+})
+$form.Controls.Add($btnHelp)
+
+# Status Label
+$statusLabel = New-Object System.Windows.Forms.Label
+$statusLabel.Text = ""
+$statusLabel.Location = New-Object System.Drawing.Point(10, 140)
+$statusLabel.Size = New-Object System.Drawing.Size(400, 40)
+$form.Controls.Add($statusLabel)
+
+# FILE LIST PREVIEW AREA
+
+# File ListBox
+$fileListBox = New-Object System.Windows.Forms.ListBox
+$fileListBox.Location = New-Object System.Drawing.Point(10, 190)
+$fileListBox.Size = New-Object System.Drawing.Size(410, 130)
+$fileListBox.ScrollAlwaysVisible = $true
+$form.Controls.Add($fileListBox)
+
+# Summary Label
+$summaryLabel = New-Object System.Windows.Forms.Label
+$summaryLabel.Location = New-Object System.Drawing.Point(10, 325)
+$summaryLabel.Size = New-Object System.Drawing.Size(400, 20)
+$form.Controls.Add($summaryLabel)
+
+# VALIDATION FUNCTION
+
+function Validate-Selection {
+    param (
+        [string]$Path,
+        [bool]$IsFolder
+    )
+
+    $fileListBox.Items.Clear()
+    $summaryLabel.Text = ""
+
+    if ($IsFolder) {
+        if (-Not (Test-Path $Path -PathType Container)) {
+            $statusLabel.Text = "Folder does not exist."
+            $convertButton.Enabled = $false
+            return
+        }
+
+        $files = Get-ChildItem -Path $Path -Include *.cht, *.xml -File -Recurse -ErrorAction SilentlyContinue
+        if ($files.Count -gt 0) {
+            $statusLabel.Text = ""
+            $convertButton.Enabled = $true
+
+            foreach ($file in $files) {
+                $fileListBox.Items.Add($file.Name)
+            }
+
+            $summaryLabel.Text = "$($files.Count) compatible file(s) found."
+        } else {
+            $statusLabel.Text = "Folder (including subfolders) must contain .cht or .xml files."
+            $convertButton.Enabled = $false
+        }
+    } else {
+        $extension = [System.IO.Path]::GetExtension($Path).ToLower()
+        switch ($extension) {
+            ".cht" {
+                $fileListBox.Items.Clear()
+                $fileListBox.Items.Add([System.IO.Path]::GetFileName($Path))
+                $summaryLabel.Text = "1 compatible file found."
+                $statusLabel.Text = ""
+                $convertButton.Enabled = $true
+            }
+            ".xml" {
+                $fileListBox.Items.Clear()
+                $fileListBox.Items.Add([System.IO.Path]::GetFileName($Path))
+                $summaryLabel.Text = "1 compatible file found."
+                $statusLabel.Text = ""
+                $convertButton.Enabled = $true
+            }
+            default {
+                $statusLabel.Text = "Selected file must be .cht or .xml"
+                $convertButton.Enabled = $false
+            }
         }
     }
-
-    # Export Converted Cheat file - UTF8 encoding
-    $ConvertedCheats.TrimEnd() | Out-File -LiteralPath $FCEUXCheatFile -Encoding UTF8
 }
+
+# EVENT HANDLERS
+
+$browseButton.Add_Click({
+    if ($radioFile.Checked) {
+        $fileDialog = New-Object System.Windows.Forms.OpenFileDialog
+        $fileDialog.Filter = "All files (*.*)|*.*"
+        $fileDialog.Title = "Select File"
+        $fileDialog.CheckFileExists = $true
+
+        if ($fileDialog.ShowDialog() -eq "OK") {
+            $textBoxPath.Text = $fileDialog.FileName
+            Validate-Selection -Path $fileDialog.FileName -IsFolder:$false
+        }
+    } elseif ($radioFolder.Checked) {
+        $folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $folderDialog.Description = "Select Folder"
+
+        if ($folderDialog.ShowDialog() -eq "OK") {
+            $textBoxPath.Text = $folderDialog.SelectedPath
+            Validate-Selection -Path $folderDialog.SelectedPath -IsFolder:$true
+        }
+    }
+})
+
+$textBoxPath.Add_TextChanged({
+    $isFolder = $radioFolder.Checked
+    Validate-Selection -Path $textBoxPath.Text.Trim() -IsFolder:$isFolder
+})
+
+# CONVERT BUTTON ACTION
+
+$convertButton.Add_Click({
+    $inputPath = $textBoxPath.Text.Trim()
+
+    if (-Not (Test-Path $inputPath)) {
+        $statusLabel.Text = "File or folder does not exist."
+        return
+    }
+
+    try {
+        if ($radioFile.Checked) {
+            $outputDialog = New-Object System.Windows.Forms.SaveFileDialog
+            if ($outputDialog.ShowDialog() -ne "OK") { return }
+
+            $extension = [System.IO.Path]::GetExtension($inputPath).ToLower()
+            if ($extension -eq ".cht") {
+                $chtData = Import-CHT -Path $inputPath
+                $xmlData = $chtData | ConvertTo-XML -Depth 5
+                $xmlData | Out-File -FilePath $outputDialog.FileName -Encoding UTF8
+                $statusLabel.Text = "Converted CHT to XML successfully."
+            } elseif ($extension -eq ".xml") {
+                $xmlData = Get-Content -Raw -Path $inputPath | ConvertFrom-XML
+                $xmlData | Export-Csv -Path $outputDialog.FileName -NoTypeInformation -Encoding UTF8
+                $statusLabel.Text = "Converted XML to CHT successfully."
+            } else {
+                $statusLabel.Text = "Unsupported file format."
+            }
+
+        } elseif ($radioFolder.Checked) {
+            $files = Get-ChildItem -Path $inputPath -Include *.cht, *.xml -File -Recurse -ErrorAction SilentlyContinue
+            $total = $files.Count
+            if ($total -eq 0) {
+                $statusLabel.Text = "No compatible files found in folder."
+                return
+            }
+
+            $confirm = [System.Windows.Forms.MessageBox]::Show(
+                "Convert $total file(s)?",
+                "Confirm Batch Conversion",
+                [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                [System.Windows.Forms.MessageBoxIcon]::Question
+            )
+            if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) {
+                return
+            }
+
+            $outputFolder = Join-Path $inputPath "Converted"
+            if (-Not (Test-Path $outputFolder)) {
+                New-Item -ItemType Directory -Path $outputFolder | Out-Null
+            }
+
+            foreach ($file in $files) {
+                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+                $extension = $file.Extension.ToLower()
+                $outputFile = Join-Path $outputFolder "$baseName.$(if ($extension -eq '.cht') {'xml'} else {'cht'})"
+
+                if ($extension -eq ".cht") {
+                    $chtData = Import-CHT -Path $file.FullName
+                    $xmlData = $chtData | ConvertTo-XML -Depth 5
+                    $xmlData | Out-File -FilePath $outputFile -Encoding UTF8
+                } elseif ($extension -eq ".xml") {
+                    $xmlData = Get-Content -Raw -Path $file.FullName | ConvertFrom-XML
+                    $xmlData | Export-Csv -Path $outputFile -NoTypeInformation -Encoding UTF8
+                }
+            }
+
+            $statusLabel.Text = "Converted $total file(s) to: $outputFolder"
+        }
+    } catch {
+        $statusLabel.Text = "Conversion failed: $($_.Exception.Message)"
+    }
+})
+
+# Show Form
+$form.Topmost = $true
+[void]$form.ShowDialog()
